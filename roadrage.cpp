@@ -15,6 +15,7 @@
 #include <iostream>
 #include "tgaClass.h"
 #include <string.h>
+#include "glm.h"
 
 using namespace std;
 
@@ -48,7 +49,7 @@ static float cameraX = 0.0;
 static float cameraY = 50.0;
 static float cameraZ = 50.0;
 static float wheelBase = 5.0;
-
+static GLMmodel* tree;
 
 // Texture Ids
 static GLuint floorId;
@@ -127,6 +128,12 @@ void makeBikeEntity(float, float, float, float, float);
 void setTextureParameters(GLuint, string);
 angles invert(float);
 void loadTextures(void);
+void loadModels(void);
+
+void loadModels(void) {
+  tree = (GLMmodel*)malloc(sizeof(GLMmodel));
+  tree = glmReadOBJ("Tree-Square.obj");
+}
 
 void setTextureParameters(GLuint id, string name)
 {
@@ -870,6 +877,18 @@ void display(void) {
     glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
   glPopMatrix();
 
+  for(int i=0; i<100; i++) {
+    glPushMatrix();
+      glTranslatef(rand()%1500 - 750, 100, rand()%1500 - 750);
+      glPushMatrix();
+        glRotatef(90, 1, 0, 0);
+        glRotatef(rand()%180, 0, 0, 1);
+        glScalef(30.0, 30.0, 30.0);
+        glmDraw(tree, GLM_SMOOTH|GLM_MATERIAL);
+      glPopMatrix();
+    glPopMatrix();
+  }
+
   glPushMatrix();
     glBindTexture(GL_TEXTURE_2D, floorId);
     glEnable(GL_TEXTURE_2D);
@@ -1002,12 +1021,14 @@ void init(void) {
   glShadeModel(GL_SMOOTH);
   glMatrixMode(GL_PROJECTION);
   loadTextures();
+  loadModels();
 }
 
 // Keyboard callback that allows the user to quit, zoom, and toggle MSAA.
 void keyboard(unsigned char key, int x, int y){
   switch (key) {
     case 'q':
+      delete tree;
       exit(0);
       break;
     case 'w':
