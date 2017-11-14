@@ -16,6 +16,8 @@
 #include "tgaClass.h"
 #include <string.h>
 #include "glm.h"
+#include <vector>
+#include <time.h>
 
 using namespace std;
 
@@ -34,6 +36,26 @@ using namespace std;
 #define PI 3.141592653
 #define RADIANS_TO_DEGREES (180 / PI)
 
+// Return value from inverse kinematics function.
+struct angles {
+  float a1, a2;
+} typedef angles;
+
+// Convenient way to store vertices.
+struct vertex {
+  GLfloat x, y, z;
+} typedef vertex;
+
+// Convenient way to store normals. (Not different that vertices, but provides
+// clear code.)
+struct normal {
+  GLfloat x, y, z;
+} typedef normal;
+
+struct treeObj {
+  float centerX, centerY, centerZ, rotation, scaleX, scaleY, scaleZ, fall;
+} typedef treeObj;
+
 // Static variables
 static float framesPerSecond = 0.0f;
 static int lastTime	= 0;
@@ -50,6 +72,7 @@ static float cameraY = 50.0;
 static float cameraZ = 50.0;
 static float wheelBase = 5.0;
 static GLMmodel* tree;
+vector<treeObj> treeList;
 
 // Texture Ids
 static GLuint floorId;
@@ -97,22 +120,6 @@ GLfloat worldMatDif[] = {1.0, 1.0, 1.0, 1.0};
 GLfloat worldMatSpec[] = {1.0, 1.0 ,1.0, 1.0};
 GLfloat worldMatShin[] = {100.0};
 
-// Return value from inverse kinematics function.
-struct angles {
-  float a1, a2;
-} typedef angles;
-
-// Convenient way to store vertices.
-struct vertex {
-  GLfloat x, y, z;
-} typedef vertex;
-
-// Convenient way to store normals. (Not different that vertices, but provides
-// clear code.)
-struct normal {
-  GLfloat x, y, z;
-} typedef normal;
-
 // Function prototypes
 void display(void);
 void makeVertex(vertex, normal);
@@ -129,6 +136,49 @@ void setTextureParameters(GLuint, string);
 angles invert(float);
 void loadTextures(void);
 void loadModels(void);
+void generateTrees(void);
+int checkTreeCollisions(void);
+void knockDownTrees(void);
+
+void knockDownTrees(void) {
+  for(int i=0; i<treeList.size(); i++) {
+    if ((treeList[i].fall < 90) && (treeList[i].fall > 0)) {
+      treeList[i].fall = treeList[i].fall - 5;
+    }
+    if (treeList[i].fall <= 0) {
+      treeList[i].centerY = treeList[i].centerY - 5;
+    }
+    if (treeList[i].centerY < 0) {
+      treeList.erase(treeList.begin() + i);
+    }
+  }
+}
+
+int checkTreeCollisions(void) {
+  for(int i=0; i<treeList.size(); i++) {
+    float disX = treeList[i].scaleX * 0.5;
+    float disZ = treeList[i].scaleZ * 0.5;
+    if ((treeList[i].centerX - disX < cameraX) && (cameraX < treeList[i].centerX + disX)) {
+      if ((treeList[i].centerZ - disZ < cameraZ) && (cameraZ < treeList[i].centerZ + disZ)) {
+        return i;
+      }
+    }
+  }
+
+  return -1;
+}
+
+void generateTrees(void) {
+  for(int i=0; i<100; i++) {
+    treeObj temp;
+    temp.scaleX = rand()%50 + 5; temp.scaleY = rand()%5 + 2;
+    temp.scaleZ = rand()%20 + 40;
+    temp.centerX = rand()%1900 - 950; temp.centerY = temp.scaleZ*3;
+    temp.centerZ = rand()%1900 - 950; temp.rotation = rand()%360;
+    temp.fall = 90;
+    treeList.push_back(temp);
+  }
+}
 
 void loadModels(void) {
   tree = (GLMmodel*)malloc(sizeof(GLMmodel));
@@ -877,13 +927,13 @@ void display(void) {
     glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
   glPopMatrix();
 
-  for(int i=0; i<100; i++) {
+  for(int i=0; i<treeList.size(); i++) {
     glPushMatrix();
-      glTranslatef(rand()%1500 - 750, 100, rand()%1500 - 750);
+      glTranslatef(treeList[i].centerX, treeList[i].centerY, treeList[i].centerZ);
+      glRotatef(treeList[i].fall, 1, 0, 0);
       glPushMatrix();
-        glRotatef(90, 1, 0, 0);
-        glRotatef(rand()%180, 0, 0, 1);
-        glScalef(30.0, 30.0, 30.0);
+        glRotatef(treeList[i].rotation, 0, 0, 1);
+        glScalef(treeList[i].scaleX, treeList[i].scaleY, treeList[i].scaleZ);
         glmDraw(tree, GLM_SMOOTH|GLM_MATERIAL);
       glPopMatrix();
     glPopMatrix();
@@ -1022,6 +1072,7 @@ void init(void) {
   glMatrixMode(GL_PROJECTION);
   loadTextures();
   loadModels();
+  generateTrees();
 }
 
 // Keyboard callback that allows the user to quit, zoom, and toggle MSAA.
@@ -1067,7 +1118,6 @@ void myReshape(int w, int h) {
 
 // Idle callback that does a small z axis rotation and flashes the antenna light.
 void idle() {
-
   if (wheelAngle > 360.0)
   		wheelAngle = wheelAngle - 360.0;
   	wheelAngle += 5;
@@ -1101,8 +1151,29 @@ void idle() {
     heading = heading - 360;
   }
 
+  float prevX = cameraX;
+  float prevZ = cameraZ;
   cameraX = cameraX + sin(heading/RADIANS_TO_DEGREES)*speed;
   cameraZ = cameraZ - cos(heading/RADIANS_TO_DEGREES)*speed;
+  int check = checkTreeCollisions();
+  if (check > -1) {
+    cameraX = prevX;
+    cameraZ = prevZ;
+    treeList[check].fall = 89;
+  }
+  knockDownTrees();
+  if (cameraX > 990) {
+    cameraX = 990;
+  }
+  if (cameraX < -990) {
+    cameraX = -990;
+  }
+  if (cameraZ > 990) {
+    cameraZ = 990;
+  }
+  if (cameraZ < -990) {
+    cameraZ = -990;
+  }
   glutPostRedisplay();
 }
 
@@ -1122,6 +1193,7 @@ void CalculateFrameRate(void) {
 }
 
 int main(int argc, char **argv) {
+  srand(time(NULL));
   // Initialize OpenGL.
   glutInit(&argc, argv);
   glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH | GLUT_MULTISAMPLE);
