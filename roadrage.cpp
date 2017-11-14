@@ -54,7 +54,13 @@ struct normal {
 
 struct treeObj {
   float centerX, centerY, centerZ, rotation, scaleX, scaleY, scaleZ, fall;
+  float fallAngle;
 } typedef treeObj;
+
+struct bikeMan {
+  float x, y, z, r, t, scale;
+  int dead;
+} typedef bikeMan;
 
 // Static variables
 static float framesPerSecond = 0.0f;
@@ -68,15 +74,17 @@ static float speed = 0.0;
 static float turn = 0.0;
 static float heading = 0.0;
 static float cameraX = 0.0;
-static float cameraY = 50.0;
-static float cameraZ = 50.0;
-static float wheelBase = 5.0;
+static float cameraY = 10.0;
+static float cameraZ = 0.0;
+static int win = 0;
 static GLMmodel* tree;
 vector<treeObj> treeList;
+vector<bikeMan> bikeList;
 
 // Texture Ids
 static GLuint floorId;
 static GLuint wallId;
+static GLuint woodId;
 
 // Window Height and Width Respectively
 static GLsizei wh = 1000, ww = 1000;
@@ -131,58 +139,112 @@ void CalculateFrameRate(void);
 void makeWheel(void);
 void makeBike(void);
 void makePerson(void);
-void makeBikeEntity(float, float, float, float, float);
+void makeBikeEntity(float, float, float, float, float, float);
 void setTextureParameters(GLuint, string);
 angles invert(float);
 void loadTextures(void);
 void loadModels(void);
-void generateTrees(void);
-int checkTreeCollisions(void);
+void generateTrees(int);
+int checkTreeCollisions(float, float);
+int checkBikeCollisions(float, float);
 void knockDownTrees(void);
+void generateBikeMen(int);
+void checkWin(void);
+
+void checkWin(void) {
+  if (bikeList.empty()) {
+    win = 1;
+  }
+}
+
+void generateBikeMen(int numMen) {
+  int i = 0;
+  while (i < numMen) {
+    bikeMan temp;
+    temp.scale = rand()%3 + 3;
+    temp.x = rand()%1950 - 975; temp.y = 2.0*temp.scale;
+    temp.z = rand()%1950 - 975; temp.t = rand()%70 + 5;
+    temp.r = rand()%100 + 10; temp.dead = 0;
+    int check = checkTreeCollisions(temp.x, temp.y);
+    int check2 = checkBikeCollisions(temp.x, temp.y);
+    if ((check < 0) && (check2 < 0)) {
+      bikeList.push_back(temp);
+      i++;
+    }
+  }
+}
 
 void knockDownTrees(void) {
   for(int i=0; i<treeList.size(); i++) {
-    if ((treeList[i].fall < 90) && (treeList[i].fall > 0)) {
-      treeList[i].fall = treeList[i].fall - 5;
+    if ((treeList[i].fall > 0) && (treeList[i].fall < 90)) {
+      treeList[i].fall = treeList[i].fall + 1;
     }
-    if (treeList[i].fall <= 0) {
-      treeList[i].centerY = treeList[i].centerY - 5;
+    if (treeList[i].fall >= 90) {
+      treeList[i].centerY = treeList[i].centerY - 0.1;
     }
-    if (treeList[i].centerY < 0) {
+    if (treeList[i].centerY < -100) {
       treeList.erase(treeList.begin() + i);
     }
   }
 }
 
-int checkTreeCollisions(void) {
+void killBikeMen(void) {
+  for(int i=0; i<bikeList.size(); i++) {
+    if (bikeList[i].dead > 0) {
+      bikeList[i].y = bikeList[i].y + 2;
+    }
+    if (bikeList[i].y > 500) {
+      bikeList.erase(bikeList.begin() + i);
+    }
+  }
+}
+
+int checkTreeCollisions(float x, float y) {
   for(int i=0; i<treeList.size(); i++) {
-    float disX = treeList[i].scaleX * 0.5;
-    float disZ = treeList[i].scaleZ * 0.5;
-    if ((treeList[i].centerX - disX < cameraX) && (cameraX < treeList[i].centerX + disX)) {
-      if ((treeList[i].centerZ - disZ < cameraZ) && (cameraZ < treeList[i].centerZ + disZ)) {
+    if (treeList[i].fall < 45) {
+      float dis = treeList[i].scaleX * 2;
+      if ((treeList[i].centerX - dis < x) && (x < treeList[i].centerX + dis)) {
+        if ((treeList[i].centerZ - dis < y) && (y < treeList[i].centerZ + dis)) {
+          return i;
+        }
+      }
+    }
+  }
+  return -1;
+}
+
+int checkBikeCollisions(float x, float y) {
+  for(int i=0; i<bikeList.size(); i++) {
+    float dis = bikeList[i].r;
+    if ((bikeList[i].x - dis < x) && (x < bikeList[i].x + dis)) {
+      if ((bikeList[i].z - dis < y) && (y < bikeList[i].z + dis)) {
         return i;
       }
     }
   }
-
   return -1;
 }
 
-void generateTrees(void) {
-  for(int i=0; i<100; i++) {
+void generateTrees(int numTrees) {
+  int i = 0;
+  while (i < numTrees) {
     treeObj temp;
-    temp.scaleX = rand()%50 + 5; temp.scaleY = rand()%5 + 2;
-    temp.scaleZ = rand()%20 + 40;
-    temp.centerX = rand()%1900 - 950; temp.centerY = temp.scaleZ*3;
-    temp.centerZ = rand()%1900 - 950; temp.rotation = rand()%360;
-    temp.fall = 90;
-    treeList.push_back(temp);
+    temp.scaleX = rand()%50 + 5; temp.scaleY = rand()%20 + 40;
+    temp.scaleZ = rand()%5 + 2;
+    temp.centerX = rand()%1900 - 950; temp.centerY = 0;
+    temp.centerZ = rand()%1900 - 950; temp.rotation = rand()%180;
+    temp.fall = 0; temp.fallAngle = 0;
+    int check = checkTreeCollisions(temp.centerX, temp.centerZ);
+    if (check < 0) {
+      treeList.push_back(temp);
+      i++;
+    }
   }
 }
 
 void loadModels(void) {
   tree = (GLMmodel*)malloc(sizeof(GLMmodel));
-  tree = glmReadOBJ("Tree-Square.obj");
+  tree = glmReadOBJ("tree-matted.obj");
 }
 
 void setTextureParameters(GLuint id, string name)
@@ -211,6 +273,8 @@ void loadTextures(void) {
   setTextureParameters(floorId, "ground.tga");
   glGenTextures(1, &wallId);
   setTextureParameters(wallId, "distant-forest.tga");
+  glGenTextures(1, &woodId);
+  setTextureParameters(woodId, "download.tga");
 }
 
 // Inverse Kinematics Equation
@@ -459,12 +523,12 @@ void makeBike(void) {
   // Chain
   glPushMatrix();
   glRotatef(5, 0.0, 0.0, 1.0);
-    for(int i=0; i<120; i++) {
+    for(int i=0; i<60; i++) {
       glPushMatrix();
-        glTranslatef(-cos((wheelAngle + 1.5 * i) * 2 * (1 / RADIANS_TO_DEGREES)) * 3.3 - 2.7,
-                     sin((wheelAngle + 1.5 * i) * 2 * (1 / RADIANS_TO_DEGREES)) * 1.7 + 0.4,
+        glTranslatef(-cos((wheelAngle + 3.0 * i) * 2 * (1 / RADIANS_TO_DEGREES)) * 3.3 - 2.7,
+                     sin((wheelAngle + 3.0 * i) * 2 * (1 / RADIANS_TO_DEGREES)) * 1.7 + 0.4,
                      0.6);
-        glutSolidSphere(0.1, 5, 5);
+        glutSolidSphere(0.1, 4, 4);
       glPopMatrix();
     }
   glPopMatrix();
@@ -881,7 +945,7 @@ void makeWheel(void) {
       }
       glPushMatrix();
         glRotatef(i * 15, 0.0, 1.0, 0.0);
-        gluCylinder(gluNewQuadric(), 0.05, 0.05, 2.0, 20, 20);
+        gluCylinder(gluNewQuadric(), 0.05, 0.05, 2.0, 5, 5);
       glPopMatrix();
     glPopMatrix();
   }
@@ -899,14 +963,17 @@ void makeWheel(void) {
   resetMats();
 }
 
-void makeBikeEntity(float centerX, float centerY, float centerZ, float radius, float tilt) {
+void makeBikeEntity(float centerX, float centerY, float centerZ, float radius, float tilt, float scale) {
   glTranslatef(centerX, centerY, centerZ);
   glRotatef(bikeAngle, 0.0, 1.0, 0.0);
   glPushMatrix();
     glTranslatef(0.0, 0.0, radius);
     glRotatef(tilt, -1.0, 0.0, 0.0);
-    makeBike();
-    makePerson();
+    glPushMatrix();
+      glScalef(scale, scale, scale);
+      makeBike();
+      makePerson();
+    glPopMatrix();
   glPopMatrix();
 }
 
@@ -918,24 +985,49 @@ void display(void) {
   glLoadIdentity();
   glEnable(GL_LIGHT0);
 
-  gluLookAt(cameraX, cameraY, cameraZ,
-            cameraX + sin(heading/RADIANS_TO_DEGREES) * 1000, 0.0,
-            cameraZ - cos(heading/RADIANS_TO_DEGREES) * 1000, 0, 1, 0);
+  if (win == 0) {
+    gluLookAt(cameraX, cameraY, cameraZ,
+              cameraX + sin(heading/RADIANS_TO_DEGREES) * 1000, 0.0,
+              cameraZ - cos(heading/RADIANS_TO_DEGREES) * 1000, 0, 1, 0);
+  }
+  else {
+    gluLookAt(cameraX, cameraY, cameraZ, 0.0, 0.0, 0.0, 0, 1, 0);
+  }
 
   // Place the light.
   glPushMatrix();
     glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
   glPopMatrix();
 
+  glBindTexture(GL_TEXTURE_2D, woodId);
+  glEnable(GL_TEXTURE_2D);
+
   for(int i=0; i<treeList.size(); i++) {
     glPushMatrix();
       glTranslatef(treeList[i].centerX, treeList[i].centerY, treeList[i].centerZ);
-      glRotatef(treeList[i].fall, 1, 0, 0);
+      glRotatef(treeList[i].fallAngle, 0, -1, 0);
       glPushMatrix();
-        glRotatef(treeList[i].rotation, 0, 0, 1);
-        glScalef(treeList[i].scaleX, treeList[i].scaleY, treeList[i].scaleZ);
-        glmDraw(tree, GLM_SMOOTH|GLM_MATERIAL);
+        glRotatef(treeList[i].fall, 1, 0, 0);
+        glRotatef(treeList[i].rotation + treeList[i].fallAngle, 0, 1, 0);
+        glPushMatrix();
+          glScalef(treeList[i].scaleX, treeList[i].scaleY, treeList[i].scaleZ);
+          glmDraw(tree, GLM_SMOOTH|GLM_MATERIAL|GLM_TEXTURE);
+        glPopMatrix();
+        glPushMatrix();
+          glRotatef(-90, 0, 1, 0);
+          glScalef(treeList[i].scaleY, treeList[i].scaleY, treeList[i].scaleZ);
+          glmDraw(tree, GLM_SMOOTH|GLM_MATERIAL|GLM_TEXTURE);
+        glPopMatrix();
       glPopMatrix();
+    glPopMatrix();
+  }
+
+  glDisable(GL_TEXTURE_2D);
+
+  for(int i=0; i<bikeList.size(); i++) {
+    glPushMatrix();
+      makeBikeEntity(bikeList[i].x, bikeList[i].y, bikeList[i].z, bikeList[i].r,
+                    bikeList[i].t, bikeList[i].scale);
     glPopMatrix();
   }
 
@@ -1026,18 +1118,10 @@ void display(void) {
       glNormal3f(-1.0, 0.0, 0.0);
       glVertex3f(1000, 400, -1000);
     glEnd();
-
-
   glPopMatrix();
 
   glDisable(GL_TEXTURE_2D);
-
-  glPushMatrix();
-    makeBikeEntity(0, 5, -50, 10, 20);
-  glPopMatrix();
-
   resetMats();
-
   glutSwapBuffers();
 	CalculateFrameRate();
 }
@@ -1072,7 +1156,8 @@ void init(void) {
   glMatrixMode(GL_PROJECTION);
   loadTextures();
   loadModels();
-  generateTrees();
+  generateTrees(50);
+  generateBikeMen(5);
 }
 
 // Keyboard callback that allows the user to quit, zoom, and toggle MSAA.
@@ -1118,6 +1203,8 @@ void myReshape(int w, int h) {
 
 // Idle callback that does a small z axis rotation and flashes the antenna light.
 void idle() {
+  checkWin();
+
   if (wheelAngle > 360.0)
   		wheelAngle = wheelAngle - 360.0;
   	wheelAngle += 5;
@@ -1150,29 +1237,55 @@ void idle() {
   if (heading > 360) {
     heading = heading - 360;
   }
+  if (heading < 0) {
+    heading = heading + 360;
+  }
 
-  float prevX = cameraX;
-  float prevZ = cameraZ;
-  cameraX = cameraX + sin(heading/RADIANS_TO_DEGREES)*speed;
-  cameraZ = cameraZ - cos(heading/RADIANS_TO_DEGREES)*speed;
-  int check = checkTreeCollisions();
-  if (check > -1) {
-    cameraX = prevX;
-    cameraZ = prevZ;
-    treeList[check].fall = 89;
+  if (win == 0) {
+    float prevX = cameraX;
+    float prevZ = cameraZ;
+    cameraX = cameraX + sin(heading/RADIANS_TO_DEGREES)*speed;
+    cameraZ = cameraZ - cos(heading/RADIANS_TO_DEGREES)*speed;
+    int check = checkTreeCollisions(cameraX, cameraZ);
+    if (check > -1) {
+      cameraX = prevX;
+      cameraZ = prevZ;
+      if (treeList[check].fall < 1) {
+        treeList[check].fall = 1;
+        treeList[check].fallAngle = heading + 180;
+      }
+    }
+    check = checkBikeCollisions(cameraX, cameraZ);
+    if (check > -1) {
+      bikeList[check].dead = 1;
+    }
+    knockDownTrees();
+    killBikeMen();
+    if (cameraX > 990) {
+      cameraX = 990;
+    }
+    if (cameraX < -990) {
+      cameraX = -990;
+    }
+    if (cameraZ > 990) {
+      cameraZ = 990;
+    }
+    if (cameraZ < -990) {
+      cameraZ = -990;
+    }
   }
-  knockDownTrees();
-  if (cameraX > 990) {
-    cameraX = 990;
-  }
-  if (cameraX < -990) {
-    cameraX = -990;
-  }
-  if (cameraZ > 990) {
-    cameraZ = 990;
-  }
-  if (cameraZ < -990) {
-    cameraZ = -990;
+  else {
+    knockDownTrees();
+    killBikeMen();
+    int i = rand()%treeList.size();
+    int j = rand()%100;
+    if ((treeList[i].fall < 1) && (j < 5)) {
+      treeList[i].fall = 1;
+      treeList[i].fallAngle = rand()%360;
+    }
+    if (cameraY < 4000) {
+      cameraY = cameraY + 1;
+    }
   }
   glutPostRedisplay();
 }
