@@ -263,7 +263,7 @@ int checkTreeCollisions(float x, float z, float disx, float disz) {
     int check = 0;
     if (treeList[i].fall < 45) {
       check = 1;
-      float dis = treeList[i].scaleX * 2;
+      float dis = 0.75 * treeList[i].scaleX;
       if ((treeList[i].centerX + dis < x - disx) || (x + disx < treeList[i].centerX - dis)) {
         check = 0;
       }
