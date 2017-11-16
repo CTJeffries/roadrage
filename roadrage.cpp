@@ -74,12 +74,14 @@ static float speed = 0.0;
 static float turn = 0.0;
 static float heading = 0.0;
 static float cameraX = 0.0;
-static float cameraY = 10.0;
+static float cameraY = 20.0;
 static float cameraZ = 0.0;
 static int win = 0;
 static GLMmodel* tree;
 vector<treeObj> treeList;
 vector<bikeMan> bikeList;
+int keyboard[256] = {0};
+static int view = 0;
 
 // Texture Ids
 static GLuint floorId;
@@ -127,6 +129,18 @@ GLfloat worldMatAmb[] = {1.0, 1.0, 1.0, 1.0};
 GLfloat worldMatDif[] = {1.0, 1.0, 1.0, 1.0};
 GLfloat worldMatSpec[] = {1.0, 1.0 ,1.0, 1.0};
 GLfloat worldMatShin[] = {100.0};
+
+GLfloat carPaintMatAmb[] = {0.9, 0.1, 0.9, 1.0};
+GLfloat carPaintMatDif[] = {0.95, 0.1, 0.95, 1.0};
+GLfloat carPaintMatSpec[] = {1.0, 1.0 ,1.0, 1.0};
+GLfloat carPaintMatShin[] = {100.0};
+
+GLfloat carInteriorPaintMatAmb[] = {0.7, 0.7, 0.7, 1.0};
+GLfloat carInteriorPaintMatDif[] = {0.72, 0.72, 0.72, 1.0};
+GLfloat carInteriorPaintMatSpec[] = {1.0, 1.0 ,1.0, 1.0};
+GLfloat carInteriorPaintMatShin[] = {20.0};
+
+GLfloat fogColor[] = {1.0, 1.0, 1.0, 1.0};
 
 // Function prototypes
 void display(void);
@@ -977,6 +991,46 @@ void makeBikeEntity(float centerX, float centerY, float centerZ, float radius, f
   glPopMatrix();
 }
 
+void makeCar() {
+  glPushMatrix();
+    glTranslatef(cameraX, 5.0, cameraZ);
+    glRotatef(heading, 0, -1, 0);
+    glPushMatrix();
+      glRotatef(90, 0, 1, 0);
+      glTranslatef(10.0, 0.0, 15.0);
+      glScalef(3.0, 3.0, 3.0);
+      makeWheel();
+    glPopMatrix();
+    glPushMatrix();
+      glRotatef(90, 0, 1, 0);
+      glTranslatef(10.0, 0.0, -15.0);
+      glScalef(3.0, 3.0, 3.0);
+      makeWheel();
+    glPopMatrix();
+    glPushMatrix();
+      glRotatef(90, 0, 1, 0);
+      glTranslatef(-10.0, 0.0, 15.0);
+      glScalef(3.0, 3.0, 3.0);
+      makeWheel();
+    glPopMatrix();
+    glPushMatrix();
+      glRotatef(90, 0, 1, 0);
+      glTranslatef(-10.0, 0.0, -15.0);
+      glScalef(3.0, 3.0, 3.0);
+      makeWheel();
+    glPopMatrix();
+    glPushMatrix();
+      resetMats();
+      glMaterialfv(GL_FRONT, GL_AMBIENT, carPaintMatAmb);
+      glMaterialfv(GL_FRONT, GL_DIFFUSE, carPaintMatDif);
+      glMaterialfv(GL_FRONT, GL_SPECULAR, carPaintMatSpec);
+      glMaterialfv(GL_FRONT, GL_SHININESS, carPaintMatShin);
+      glScalef(22.0, 20.0, 30.0);
+      glutSolidCube(1.0);
+    glPopMatrix();
+  glPopMatrix();
+}
+
 // Display callback.
 // Generates building and applies the rotations.
 void display(void) {
@@ -986,9 +1040,18 @@ void display(void) {
   glEnable(GL_LIGHT0);
 
   if (win == 0) {
-    gluLookAt(cameraX, cameraY, cameraZ,
-              cameraX + sin(heading/RADIANS_TO_DEGREES) * 1000, 0.0,
-              cameraZ - cos(heading/RADIANS_TO_DEGREES) * 1000, 0, 1, 0);
+    if (view == 0) {
+      gluLookAt(cameraX, cameraY, cameraZ,
+                cameraX + sin(heading/RADIANS_TO_DEGREES) * 1000, cameraY,
+                cameraZ - cos(heading/RADIANS_TO_DEGREES) * 1000, 0, 1, 0);
+      }
+      else {
+        gluLookAt(cameraX - sin(heading/RADIANS_TO_DEGREES) * 100,
+                  cameraY + 50.0,
+                  cameraZ + cos(heading/RADIANS_TO_DEGREES) * 100,
+                  cameraX + sin(heading/RADIANS_TO_DEGREES) * 1000, - 100.0,
+                  cameraZ - cos(heading/RADIANS_TO_DEGREES) * 1000, 0, 1, 0);
+      }
   }
   else {
     gluLookAt(cameraX, cameraY, cameraZ, 0.0, 0.0, 0.0, 0, 1, 0);
@@ -1030,6 +1093,8 @@ void display(void) {
                     bikeList[i].t, bikeList[i].scale);
     glPopMatrix();
   }
+
+  makeCar();
 
   glPushMatrix();
     glBindTexture(GL_TEXTURE_2D, floorId);
@@ -1147,46 +1212,69 @@ void resetMats(void) {
 
 // Initialization function.
 void init(void) {
-  glClearColor(0.7, 0.7, 0.7, 1.0);
+  glClearColor(1.0, 1.0, 1.0, 1.0);
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
   glEnable(GL_AUTO_NORMAL);
   glEnable(GL_NORMALIZE);
   glShadeModel(GL_SMOOTH);
   glMatrixMode(GL_PROJECTION);
+
+  glEnable(GL_FOG);
+  glFogi(GL_FOG_MODE, GL_EXP);
+  glFogf(GL_FOG_DENSITY, 0.001);
+  glFogfv(GL_FOG, fogColor);
+  // glFogf(GL_FOG_START, 1.0);
+  // glFogf(GL_FOG_END, 10000.0);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
   loadTextures();
   loadModels();
   generateTrees(50);
   generateBikeMen(5);
 }
 
+void keyboardUp(unsigned char key, int x, int y) {
+  keyboard[key] = 0;
+}
+
+void keyboardDown(unsigned char key, int x, int y) {
+  keyboard[key] = 1;
+  if (key == 'v') {
+    if (view == 1) {
+      view = 0;
+    }
+    else {
+      view = 1;
+    }
+  }
+}
+
 // Keyboard callback that allows the user to quit, zoom, and toggle MSAA.
-void keyboard(unsigned char key, int x, int y){
-  switch (key) {
-    case 'q':
-      delete tree;
-      exit(0);
-      break;
-    case 'w':
-      if (speed<5.0) {
-        speed = speed + 1.0;
-      }
-      break;
-    case 'a':
-      if (turn>-1.0) {
-        turn = turn - 0.5;
-      }
-      break;
-    case 's':
-      if (speed>-2.0) {
-        speed = speed - 0.5;
-      }
-      break;
-    case 'd':
-      if (turn<1.0) {
-        turn = turn + 0.5;
-      }
-      break;
+void keyboardCheck(void) {
+  if (keyboard['q'] == 1) {
+    delete tree;
+    exit(0);
+  }
+  if (keyboard['w'] == 1) {
+    if (speed<5.0) {
+      speed = speed + 1.0;
+    }
+  }
+  if (keyboard['a'] == 1) {
+    if (turn>-4.0) {
+      turn = turn - 1.0;
+    }
+  }
+  if (keyboard['s'] == 1) {
+    if (speed>-2.0) {
+      speed = speed - 0.5;
+    }
+  }
+  if (keyboard['d'] == 1) {
+    if (turn<4.0) {
+      turn = turn + 1.0;
+    }
   }
 }
 
@@ -1204,6 +1292,7 @@ void myReshape(int w, int h) {
 // Idle callback that does a small z axis rotation and flashes the antenna light.
 void idle() {
   checkWin();
+  keyboardCheck();
 
   if (wheelAngle > 360.0)
   		wheelAngle = wheelAngle - 360.0;
@@ -1227,10 +1316,10 @@ void idle() {
     turn = 0;
   }
   else if (turn > 0) {
-    turn = turn - 0.005;
+    turn = turn - 0.5;
   }
   else if (turn < 0) {
-    turn = turn + 0.005;
+    turn = turn + 0.5;
   }
 
   heading = heading + turn;
@@ -1319,10 +1408,12 @@ int main(int argc, char **argv) {
   glutCreateWindow("OpenGL Road Rage: 0");
 
   // Set callbacks.
+  glutIgnoreKeyRepeat(1);
   glutDisplayFunc(display);
   glutMouseFunc(mouse);
   glutMotionFunc(motion);
-  glutKeyboardFunc(keyboard);
+  glutKeyboardFunc(keyboardDown);
+  glutKeyboardUpFunc(keyboardUp);
   glutReshapeFunc(myReshape);
   glutIdleFunc(idle);
 
