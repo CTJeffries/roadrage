@@ -2,10 +2,16 @@
 // Colby Jeffries & Tommy Bacher
 // roadrage.cpp
 
-// INSERT DESCRIPTION HERE
+// This is a game! Drive a car, run over all of the bike men to win!
+// Trees are obstacles, but you can knock them down!
 
 // Controls:
-//
+//  w: Accelerator
+//  s: Brake/Reverse
+//  a: Turn Left
+//  d: Turn Right
+//  v: Swap between 1st and 3rd person.
+//  h: Toggles horror mode. (THICK FOG).
 
 // Modules
 #include <stdio.h>
@@ -52,11 +58,14 @@ struct normal {
   GLfloat x, y, z;
 } typedef normal;
 
+// Contains the relevant information to generate a tree, animate it and detect
+// collisions with it.
 struct treeObj {
   float centerX, centerY, centerZ, rotation, scaleX, scaleY, scaleZ, fall;
   float fallAngle;
 } typedef treeObj;
 
+// Same as the tree object, but for the bike man.
 struct bikeMan {
   float x, y, z, r, t, scale;
   int dead;
@@ -74,24 +83,35 @@ static float speed = 0.0;
 static float turn = 0.0;
 static float heading = 0.0;
 static float cameraX = 0.0;
-static float cameraY = 20.0;
+static float cameraY = 40.0;
 static float cameraZ = 0.0;
 static int win = 0;
 static GLMmodel* tree;
+static GLMmodel* steeringWheel;
+static int view = 0;
+static int horror = 0;
+static GLfloat carWheelRotation = 0;
+static float carWidth = 20; // From center of car.
+static float carLength = 30; // Same.
+
+// Global data structures
 vector<treeObj> treeList;
 vector<bikeMan> bikeList;
 int keyboard[256] = {0};
-static int view = 0;
+// Save the calculations for all bike men in one place to avoid repitition.
+angles rightMan;
+angles leftMan;
 
 // Texture Ids
 static GLuint floorId;
 static GLuint wallId;
 static GLuint woodId;
+static GLuint velourId;
 
 // Window Height and Width Respectively
 static GLsizei wh = 1000, ww = 1000;
 
-// Globals
+// Globals materials
 GLfloat no_mat[] = {0.0, 0.0, 0.0, 1.0};
 GLfloat no_shine[] = {0.0};
 
@@ -140,9 +160,10 @@ GLfloat carInteriorPaintMatDif[] = {0.72, 0.72, 0.72, 1.0};
 GLfloat carInteriorPaintMatSpec[] = {1.0, 1.0 ,1.0, 1.0};
 GLfloat carInteriorPaintMatShin[] = {20.0};
 
-GLfloat fogColor[] = {1.0, 1.0, 1.0, 1.0};
+GLfloat fogColor[] = {0.7, 0.7, 0.7, 1.0};
 
 // Function prototypes
+// Its probably about time for a header file.
 void display(void);
 void makeVertex(vertex, normal);
 static void mouse(int, int, int, int);
@@ -159,28 +180,31 @@ angles invert(float);
 void loadTextures(void);
 void loadModels(void);
 void generateTrees(int);
-int checkTreeCollisions(float, float);
-int checkBikeCollisions(float, float);
+int checkTreeCollisions(float, float, float, float);
+int checkBikeCollisions(float, float, float, float);
 void knockDownTrees(void);
 void generateBikeMen(int);
 void checkWin(void);
 
+// Checks if the player wins, basically if all the bike men are dead.
 void checkWin(void) {
   if (bikeList.empty()) {
     win = 1;
   }
 }
 
+// Generates a specified number of bike men, ensures they are not placed on
+// trees or other bike men.
 void generateBikeMen(int numMen) {
   int i = 0;
   while (i < numMen) {
     bikeMan temp;
-    temp.scale = rand()%3 + 3;
+    temp.scale = rand()%2 + 3;
     temp.x = rand()%1950 - 975; temp.y = 2.0*temp.scale;
     temp.z = rand()%1950 - 975; temp.t = rand()%70 + 5;
-    temp.r = rand()%100 + 10; temp.dead = 0;
-    int check = checkTreeCollisions(temp.x, temp.y);
-    int check2 = checkBikeCollisions(temp.x, temp.y);
+    temp.r = rand()%10 + 10; temp.dead = 0;
+    int check = checkTreeCollisions(temp.x, temp.y, temp.r + temp.scale, temp.r * 1.5);
+    int check2 = checkBikeCollisions(temp.x, temp.y, temp.r + temp.scale, temp.r * 1.5);
     if ((check < 0) && (check2 < 0)) {
       bikeList.push_back(temp);
       i++;
@@ -188,13 +212,16 @@ void generateBikeMen(int numMen) {
   }
 }
 
+// Controls the animation for knocking down the tree. If the tree has been hit,
+// slowly knock it down. Once it is all the way down, slowly slide into the
+// ground. Once it is a certain distance down, remove it.
 void knockDownTrees(void) {
   for(int i=0; i<treeList.size(); i++) {
     if ((treeList[i].fall > 0) && (treeList[i].fall < 90)) {
       treeList[i].fall = treeList[i].fall + 1;
     }
     if (treeList[i].fall >= 90) {
-      treeList[i].centerY = treeList[i].centerY - 0.1;
+      treeList[i].centerY = treeList[i].centerY - 0.5;
     }
     if (treeList[i].centerY < -100) {
       treeList.erase(treeList.begin() + i);
@@ -202,6 +229,8 @@ void knockDownTrees(void) {
   }
 }
 
+// Controls the animation for sending bike men to heaven. If they have been hit,
+// send them into the sky. Once they reach a certain height, remove them.
 void killBikeMen(void) {
   for(int i=0; i<bikeList.size(); i++) {
     if (bikeList[i].dead > 0) {
@@ -213,42 +242,58 @@ void killBikeMen(void) {
   }
 }
 
-int checkTreeCollisions(float x, float y) {
+// Checks collisions of a specified rectangle with the trees. Parameters are
+// the center of the rectangle and the distance from the center to the edges.
+int checkTreeCollisions(float x, float z, float disx, float disz) {
   for(int i=0; i<treeList.size(); i++) {
+    int check = 0;
     if (treeList[i].fall < 45) {
+      check = 1;
       float dis = treeList[i].scaleX * 2;
-      if ((treeList[i].centerX - dis < x) && (x < treeList[i].centerX + dis)) {
-        if ((treeList[i].centerZ - dis < y) && (y < treeList[i].centerZ + dis)) {
-          return i;
-        }
+      if ((treeList[i].centerX + dis < x - disx) || (x + disx < treeList[i].centerX - dis)) {
+        check = 0;
       }
+      if ((treeList[i].centerZ + dis < z - disz) || (z + disz < treeList[i].centerZ - dis)) {
+        check = 0;
+      }
+    }
+    if (check == 1) {
+      return i;
     }
   }
   return -1;
 }
 
-int checkBikeCollisions(float x, float y) {
+// Same thing as tree collisions but with the bike men.
+int checkBikeCollisions(float x, float z, float disx, float disz) {
   for(int i=0; i<bikeList.size(); i++) {
-    float dis = bikeList[i].r;
-    if ((bikeList[i].x - dis < x) && (x < bikeList[i].x + dis)) {
-      if ((bikeList[i].z - dis < y) && (y < bikeList[i].z + dis)) {
-        return i;
-      }
+    float dis = bikeList[i].r * 1.5;
+    int check = 1;
+    if ((bikeList[i].x + dis < x - disx) || (x + disx < bikeList[i].x - dis)) {
+      check = 0;
+    }
+    if ((bikeList[i].z + dis < z - disz) || (z + disz < bikeList[i].z - dis)) {
+      check = 0;
+    }
+    if (check == 1) {
+      return i;
     }
   }
   return -1;
 }
 
+// Generates trees. Ensures they are not on top of other trees. Since this is
+// done before bike men are generated, they do not need to be checked.
 void generateTrees(int numTrees) {
   int i = 0;
   while (i < numTrees) {
     treeObj temp;
     temp.scaleX = rand()%50 + 5; temp.scaleY = rand()%20 + 40;
     temp.scaleZ = rand()%5 + 2;
-    temp.centerX = rand()%1900 - 950; temp.centerY = 0;
-    temp.centerZ = rand()%1900 - 950; temp.rotation = rand()%180;
+    temp.centerX = rand()%1980 - 990; temp.centerY = 0;
+    temp.centerZ = rand()%1980 - 990; temp.rotation = rand()%180;
     temp.fall = 0; temp.fallAngle = 0;
-    int check = checkTreeCollisions(temp.centerX, temp.centerZ);
+    int check = checkTreeCollisions(temp.centerX, temp.centerZ, temp.scaleX*2, temp.scaleX*2);
     if (check < 0) {
       treeList.push_back(temp);
       i++;
@@ -256,11 +301,15 @@ void generateTrees(int numTrees) {
   }
 }
 
+// Loads the models in. Only done once.
 void loadModels(void) {
   tree = (GLMmodel*)malloc(sizeof(GLMmodel));
   tree = glmReadOBJ("tree-matted.obj");
+  steeringWheel = (GLMmodel*)malloc(sizeof(GLMmodel));
+  steeringWheel = glmReadOBJ("wheel.obj");
 }
 
+// Loads a specified texture.
 void setTextureParameters(GLuint id, string name)
 {
 	int status = 0;
@@ -282,6 +331,7 @@ void setTextureParameters(GLuint id, string name)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 }
 
+// Loads all of the textures. Only done once.
 void loadTextures(void) {
   glGenTextures(1, &floorId);
   setTextureParameters(floorId, "ground.tga");
@@ -289,6 +339,8 @@ void loadTextures(void) {
   setTextureParameters(wallId, "distant-forest.tga");
   glGenTextures(1, &woodId);
   setTextureParameters(woodId, "download.tga");
+  glGenTextures(1, &velourId);
+  setTextureParameters(velourId, "velour.tga");
 }
 
 // Inverse Kinematics Equation
@@ -421,15 +473,11 @@ void makePerson(void){
       glPopMatrix();
     glPopMatrix();
 
-    // Leg angles.
-    angles right = invert(wheelAngle + 105);
-    angles left = invert(wheelAngle - 75);
-
     // Left Leg
     glPushMatrix();
       glTranslatef(-3.0, 5.0, -1.5);
       glPushMatrix();
-        glRotatef(-left.a1, 0, 0, 1);
+        glRotatef(-leftMan.a1, 0, 0, 1);
         glPushMatrix();
           glTranslatef(2.0, 0.0, 0.0);
           glScalef(4.0, 0.75, 0.75);
@@ -438,7 +486,7 @@ void makePerson(void){
         glPushMatrix();
           glTranslatef(4.0, 0.0, 0.0);
           glPushMatrix();
-            glRotatef(-left.a2, 0, 0, 1);
+            glRotatef(-leftMan.a2, 0, 0, 1);
             glPushMatrix();
               glTranslatef(2.0, 0.0, 0.0);
               glScalef(4.0, 0.75, 0.75);
@@ -448,7 +496,7 @@ void makePerson(void){
             glPushMatrix();
               glTranslatef(3.7, 0.5, 0.0);
               glPushMatrix();
-                glRotatef(left.a2, 0, 0, 1);
+                glRotatef(leftMan.a2, 0, 0, 1);
                 glPushMatrix();
                   glScalef(2.0, 0.5, 1.0);
                   glutSolidCube(1.0);
@@ -464,7 +512,7 @@ void makePerson(void){
     glPushMatrix();
       glTranslatef(-3.0, 5.0, 1.5);
       glPushMatrix();
-        glRotatef(-right.a1, 0, 0, 1);
+        glRotatef(-rightMan.a1, 0, 0, 1);
         glPushMatrix();
           glTranslatef(2.0, 0.0, 0.0);
           glScalef(4.0, 0.75, 0.75);
@@ -473,7 +521,7 @@ void makePerson(void){
         glPushMatrix();
           glTranslatef(4.0, 0.0, 0.0);
           glPushMatrix();
-            glRotatef(-right.a2, 0, 0, 1);
+            glRotatef(-rightMan.a2, 0, 0, 1);
             glPushMatrix();
               glTranslatef(2.0, 0.0, 0.0);
               glScalef(4.0, 0.75, 0.75);
@@ -483,7 +531,7 @@ void makePerson(void){
             glPushMatrix();
               glTranslatef(3.7, 0.5, 0.0);
               glPushMatrix();
-                glRotatef(right.a2, 0, 0, 1);
+                glRotatef(rightMan.a2, 0, 0, 1);
                 glPushMatrix();
                   glScalef(2.0, 0.5, 1.0);
                   glutSolidCube(1.0);
@@ -537,12 +585,12 @@ void makeBike(void) {
   // Chain
   glPushMatrix();
   glRotatef(5, 0.0, 0.0, 1.0);
-    for(int i=0; i<60; i++) {
+    for(int i=0; i<30; i++) {
       glPushMatrix();
-        glTranslatef(-cos((wheelAngle + 3.0 * i) * 2 * (1 / RADIANS_TO_DEGREES)) * 3.3 - 2.7,
-                     sin((wheelAngle + 3.0 * i) * 2 * (1 / RADIANS_TO_DEGREES)) * 1.7 + 0.4,
+        glTranslatef(-cos((wheelAngle + 6.0 * i) * 2 * (1 / RADIANS_TO_DEGREES)) * 3.3 - 2.7,
+                     sin((wheelAngle + 6.0 * i) * 2 * (1 / RADIANS_TO_DEGREES)) * 1.7 + 0.4,
                      0.6);
-        glutSolidSphere(0.1, 4, 4);
+        glutSolidSphere(0.1, 3, 3);
       glPopMatrix();
     }
   glPopMatrix();
@@ -559,7 +607,7 @@ void makeBike(void) {
     glTranslatef(-2.5, 4.0, 0.0);
     glPushMatrix();
       glRotatef(90, 0.0, 1.0, 0.0);
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 5.9, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 5.9, 10, 10);
     glutSolidSphere(SPHERE_SIZE, 20, 20);
     glPopMatrix();
   glPopMatrix();
@@ -589,11 +637,11 @@ void makeBike(void) {
     glPushMatrix();
       glRotatef(90, 0.0, 1.0, 0.0);
       glRotatef(70, 1.0, 0.0, 0.0);
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 2.0, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 2.0, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 2.0);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
     glPopMatrix();
   glPopMatrix();
@@ -607,11 +655,11 @@ void makeBike(void) {
     glPushMatrix();
       glRotatef(90, 0.0, 1.0, 0.0);
       glRotatef(-110, 1.0, 0.0, 0.0);
-      gluCylinder(gluNewQuadric(), 0.15, 0.15, 1.0, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.15, 0.15, 1.0, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 1.0);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
     glPopMatrix();
   glPopMatrix();
@@ -620,11 +668,11 @@ void makeBike(void) {
   glPushMatrix();
     glTranslatef(2.6, 6.0, -2.0);
     glPushMatrix();
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 4.0, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 4.0, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 4.0);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
     glPopMatrix();
   glPopMatrix();
@@ -635,11 +683,11 @@ void makeBike(void) {
     glPushMatrix();
       glRotatef(90, 0.0, 1.0, 0.0);
       glRotatef(-160, 1.0, 0.0, 0.0);
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 2.0, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 2.0, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 2.0);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
       glPushMatrix();
         resetMats();
@@ -648,11 +696,11 @@ void makeBike(void) {
         glMaterialfv(GL_FRONT, GL_SPECULAR, rubberMatSpec);
         glMaterialfv(GL_FRONT, GL_SHININESS, rubberMatShin);
         glTranslatef(0.0, 0.0, 1.0);
-        gluCylinder(gluNewQuadric(), 0.3, 0.3, 2.0, 20, 20);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        gluCylinder(gluNewQuadric(), 0.3, 0.3, 2.0, 10, 10);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
         glPushMatrix();
           glTranslatef(0.0, 0.0, 2.0);
-          glutSolidSphere(SPHERE_SIZE, 20, 20);
+          glutSolidSphere(SPHERE_SIZE, 10, 10);
         glPopMatrix();
       glPopMatrix();
     glPopMatrix();
@@ -667,11 +715,11 @@ void makeBike(void) {
     glPushMatrix();
       glRotatef(90, 0.0, 1.0, 0.0);
       glRotatef(-160, 1.0, 0.0, 0.0);
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 2.0, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 2.0, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 2.0);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
       glPushMatrix();
         resetMats();
@@ -680,11 +728,11 @@ void makeBike(void) {
         glMaterialfv(GL_FRONT, GL_SPECULAR, rubberMatSpec);
         glMaterialfv(GL_FRONT, GL_SHININESS, rubberMatShin);
         glTranslatef(0.0, 0.0, 1.0);
-        gluCylinder(gluNewQuadric(), 0.3, 0.3, 2.0, 20, 20);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        gluCylinder(gluNewQuadric(), 0.3, 0.3, 2.0, 10, 10);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
         glPushMatrix();
           glTranslatef(0.0, 0.0, 2.0);
-          glutSolidSphere(SPHERE_SIZE, 20, 20);
+          glutSolidSphere(SPHERE_SIZE, 10, 10);
         glPopMatrix();
       glPopMatrix();
     glPopMatrix();
@@ -698,11 +746,11 @@ void makeBike(void) {
   glPushMatrix();
     glTranslatef(3.7, 3.0, -0.75);
     glPushMatrix();
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 1.5, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 1.5, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 1.5);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
     glPopMatrix();
   glPopMatrix();
@@ -714,10 +762,10 @@ void makeBike(void) {
       glRotatef(90, 0.0, 1.0, 0.0);
       glRotatef(67.5, 1.0, 0.0, 0.0);
       gluCylinder(gluNewQuadric(), 0.2, 0.2, 3.25, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 3.25);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
     glPopMatrix();
   glPopMatrix();
@@ -726,11 +774,11 @@ void makeBike(void) {
     glPushMatrix();
       glRotatef(90, 0.0, 1.0, 0.0);
       glRotatef(67.5, 1.0, 0.0, 0.0);
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 3.25, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 3.25, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 3.25);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
     glPopMatrix();
   glPopMatrix();
@@ -741,11 +789,11 @@ void makeBike(void) {
     glPushMatrix();
       glRotatef(90, 0.0, 1.0, 0.0);
       glRotatef(130, 1.0, 0.0, 0.0);
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 1.5, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 1.5, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 1.5);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
     glPopMatrix();
   glPopMatrix();
@@ -754,11 +802,11 @@ void makeBike(void) {
   glPushMatrix();
     glTranslatef(-3.5, 2.8, -0.75);
     glPushMatrix();
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 1.5, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 1.5, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 1.5);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
     glPopMatrix();
   glPopMatrix();
@@ -769,11 +817,11 @@ void makeBike(void) {
     glPushMatrix();
       glRotatef(90, 0.0, 1.0, 0.0);
       glRotatef(117.5, 1.0, 0.0, 0.0);
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 3.25, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 3.25, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 3.25);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
     glPopMatrix();
   glPopMatrix();
@@ -782,11 +830,11 @@ void makeBike(void) {
     glPushMatrix();
       glRotatef(90, 0.0, 1.0, 0.0);
       glRotatef(117.5, 1.0, 0.0, 0.0);
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 3.25, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 3.25, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 3.25);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
     glPopMatrix();
   glPopMatrix();
@@ -797,11 +845,11 @@ void makeBike(void) {
     glPushMatrix();
       glRotatef(90, 0.0, 1.0, 0.0);
       glRotatef(60, 1.0, 0.0, 0.0);
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 5.0, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 5.0, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 5.0);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
     glPopMatrix();
   glPopMatrix();
@@ -812,11 +860,11 @@ void makeBike(void) {
     glPushMatrix();
       glRotatef(90, 0.0, 1.0, 0.0);
       glRotatef(135, 1.0, 0.0, 0.0);
-      gluCylinder(gluNewQuadric(), 0.2, 0.2, 5.0, 20, 20);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.2, 0.2, 5.0, 10, 10);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 5.0);
-        glutSolidSphere(SPHERE_SIZE, 20, 20);
+        glutSolidSphere(SPHERE_SIZE, 10, 10);
       glPopMatrix();
     glPopMatrix();
   glPopMatrix();
@@ -824,11 +872,11 @@ void makeBike(void) {
   // Pedal Assembly
   glPushMatrix();
     glTranslatef(-0.45, 0.35, -0.5);
-    gluCylinder(gluNewQuadric(), 0.3, 0.3, 1.0, 20, 20);
-    glutSolidSphere(SPHERE_SIZE, 20, 20);
+    gluCylinder(gluNewQuadric(), 0.3, 0.3, 1.0, 10, 10);
+    glutSolidSphere(SPHERE_SIZE, 10, 10);
     glPushMatrix();
       glTranslatef(0.0, 0.0, 1.0);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
     glPopMatrix();
     glPushMatrix();
       resetMats();
@@ -838,11 +886,11 @@ void makeBike(void) {
       glMaterialfv(GL_FRONT, GL_SHININESS, steelMatShin);
       glRotatef(wheelAngle, 0.0, 0.0, -1.0);
       glTranslatef(0.0, 0.0, -0.5);
-      gluCylinder(gluNewQuadric(), 0.25, 0.25, 2.0, 20, 20);
-      glutSolidSphere(0.05 + SPHERE_SIZE, 20, 20);
+      gluCylinder(gluNewQuadric(), 0.25, 0.25, 2.0, 10, 10);
+      glutSolidSphere(0.05 + SPHERE_SIZE, 10, 10);
       glPushMatrix();
         glTranslatef(0.0, 0.0, 2.0);
-        glutSolidSphere(0.05 + SPHERE_SIZE, 20, 20);
+        glutSolidSphere(0.05 + SPHERE_SIZE, 10, 10);
       glPopMatrix();
 
       // Pedal Gear
@@ -938,6 +986,55 @@ void makeWheel(void) {
   glMaterialfv(GL_FRONT, GL_DIFFUSE, rubberMatDif);
   glMaterialfv(GL_FRONT, GL_SPECULAR, rubberMatSpec);
   glMaterialfv(GL_FRONT, GL_SHININESS, rubberMatShin);
+  glutSolidTorus(0.5, 2.0, 10, 10);
+
+  // Rim
+  glMaterialfv(GL_FRONT, GL_AMBIENT, steelMatAmb);
+  glMaterialfv(GL_FRONT, GL_DIFFUSE, steelMatDif);
+  glMaterialfv(GL_FRONT, GL_SPECULAR, steelMatSpec);
+  glMaterialfv(GL_FRONT, GL_SHININESS, steelMatShin);
+  glutSolidTorus(0.45, 1.9, 10, 10);
+
+  // Spokes
+  for(int i=0; i<24; i++) {
+    glPushMatrix();
+      glRotatef(90, 1.0, 0.0, 0.0);
+      if (i % 2 == 0) {
+        glRotatef(3.0, 1.0, 0.0, 0.0);
+      }
+      else {
+        glRotatef(-3.0, 1.0, 0.0, 0.0);
+      }
+      glPushMatrix();
+        glRotatef(i * 15, 0.0, 1.0, 0.0);
+        gluCylinder(gluNewQuadric(), 0.05, 0.05, 2.0, 3, 3);
+      glPopMatrix();
+    glPopMatrix();
+  }
+
+  // Axel
+  glPushMatrix();
+    glTranslatef(0.0, 0.0, -1.0);
+    gluCylinder(gluNewQuadric(), 0.2, 0.2, 2.0, 10, 10);
+    glutSolidSphere(SPHERE_SIZE, 10, 10);
+    glPushMatrix();
+      glTranslatef(0.0, 0.0, 2.0);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
+    glPopMatrix();
+  glPopMatrix();
+  resetMats();
+}
+
+// Makes a car wheel. Based on the bike wheel. Modified a bit.
+void makeCarWheel(void) {
+  glRotatef(carWheelRotation, 0.0, 0.0, -1.0);
+  glScalef(5.0, 5.0, 12.0);
+
+  // Tire
+  glMaterialfv(GL_FRONT, GL_AMBIENT, rubberMatAmb);
+  glMaterialfv(GL_FRONT, GL_DIFFUSE, rubberMatDif);
+  glMaterialfv(GL_FRONT, GL_SPECULAR, rubberMatSpec);
+  glMaterialfv(GL_FRONT, GL_SHININESS, rubberMatShin);
   glutSolidTorus(0.5, 2.0, 20, 20);
 
   // Rim
@@ -959,24 +1056,25 @@ void makeWheel(void) {
       }
       glPushMatrix();
         glRotatef(i * 15, 0.0, 1.0, 0.0);
-        gluCylinder(gluNewQuadric(), 0.05, 0.05, 2.0, 5, 5);
+        gluCylinder(gluNewQuadric(), 0.05, 0.05, 2.0, 3, 3);
       glPopMatrix();
     glPopMatrix();
   }
 
   // Axel
   glPushMatrix();
-    glTranslatef(0.0, 0.0, -1.0);
-    gluCylinder(gluNewQuadric(), 0.2, 0.2, 2.0, 20, 20);
-    glutSolidSphere(SPHERE_SIZE, 20, 20);
+    glTranslatef(0.0, 0.0, -0.5);
+    gluCylinder(gluNewQuadric(), 0.2, 0.2, 1.0, 10, 10);
+    glutSolidSphere(SPHERE_SIZE, 10, 10);
     glPushMatrix();
-      glTranslatef(0.0, 0.0, 2.0);
-      glutSolidSphere(SPHERE_SIZE, 20, 20);
+      glTranslatef(0.0, 0.0, 1.0);
+      glutSolidSphere(SPHERE_SIZE, 10, 10);
     glPopMatrix();
   glPopMatrix();
   resetMats();
 }
 
+// Generates a whole bike man based on parameters.
 void makeBikeEntity(float centerX, float centerY, float centerZ, float radius, float tilt, float scale) {
   glTranslatef(centerX, centerY, centerZ);
   glRotatef(bikeAngle, 0.0, 1.0, 0.0);
@@ -991,33 +1089,36 @@ void makeBikeEntity(float centerX, float centerY, float centerZ, float radius, f
   glPopMatrix();
 }
 
+// Generates the car.
 void makeCar() {
   glPushMatrix();
-    glTranslatef(cameraX, 5.0, cameraZ);
+    glTranslatef(cameraX, 10.0, cameraZ);
     glRotatef(heading, 0, -1, 0);
     glPushMatrix();
       glRotatef(90, 0, 1, 0);
-      glTranslatef(10.0, 0.0, 15.0);
-      glScalef(3.0, 3.0, 3.0);
-      makeWheel();
+      glTranslatef(25.0, 0.0, 15.0);
+      glPushMatrix();
+        glRotatef(-turn * 3, 0, 1, 0);
+        makeCarWheel();
+      glPopMatrix();
     glPopMatrix();
     glPushMatrix();
       glRotatef(90, 0, 1, 0);
-      glTranslatef(10.0, 0.0, -15.0);
-      glScalef(3.0, 3.0, 3.0);
-      makeWheel();
+      glTranslatef(25.0, 0.0, -15.0);
+      glPushMatrix();
+        glRotatef(-turn * 3, 0, 1, 0);
+        makeCarWheel();
+      glPopMatrix();
     glPopMatrix();
     glPushMatrix();
       glRotatef(90, 0, 1, 0);
-      glTranslatef(-10.0, 0.0, 15.0);
-      glScalef(3.0, 3.0, 3.0);
-      makeWheel();
+      glTranslatef(-25.0, 0.0, 15.0);
+      makeCarWheel();
     glPopMatrix();
     glPushMatrix();
       glRotatef(90, 0, 1, 0);
-      glTranslatef(-10.0, 0.0, -15.0);
-      glScalef(3.0, 3.0, 3.0);
-      makeWheel();
+      glTranslatef(-25.0, 0.0, -15.0);
+      makeCarWheel();
     glPopMatrix();
     glPushMatrix();
       resetMats();
@@ -1025,19 +1126,98 @@ void makeCar() {
       glMaterialfv(GL_FRONT, GL_DIFFUSE, carPaintMatDif);
       glMaterialfv(GL_FRONT, GL_SPECULAR, carPaintMatSpec);
       glMaterialfv(GL_FRONT, GL_SHININESS, carPaintMatShin);
-      glScalef(22.0, 20.0, 30.0);
-      glutSolidCube(1.0);
+      glPushMatrix();
+        glTranslatef(0.0, 10.0, 0.0);
+        glScalef(30.0, 20.0, 10.0);
+        glutSolidCube(1.0);
+      glPopMatrix();
+      glPushMatrix();
+        glTranslatef(0.0, 10.0, 0.0);
+        glScalef(15.0, 20.0, 60.0);
+        glutSolidCube(1.0);
+      glPopMatrix();
+      glPushMatrix();
+        glTranslatef(0.0, 18.0, 0.0);
+        glScalef(30.0, 10.0, 60.0);
+        glutSolidCube(1.0);
+      glPopMatrix();
+      glPushMatrix();
+        glTranslatef(0.0, 20.0, -15.0);
+        glScalef(30.0, 10.0, 5.0);
+        glutSolidCube(1.0);
+      glPopMatrix();
+      glPushMatrix();
+        glTranslatef(14.0, 30.0, 8.0);
+        glScalef(2.0, 15.0, 34.0);
+        glutSolidCube(1.0);
+      glPopMatrix();
+      glPushMatrix();
+        glTranslatef(-14.0, 30.0, 8.0);
+        glScalef(2.0, 15.0, 34.0);
+        glutSolidCube(1.0);
+      glPopMatrix();
+      glPushMatrix();
+        glTranslatef(14.0, 30.0, -14.0);
+        glScalef(2.0, 15.0, 2.0);
+        glutSolidCube(1.0);
+      glPopMatrix();
+      glPushMatrix();
+        glTranslatef(-14.0, 30.0, -14.0);
+        glScalef(2.0, 15.0, 2.0);
+        glutSolidCube(1.0);
+      glPopMatrix();
+      glPushMatrix();
+        glTranslatef(0.0, 37.0, 8.0);
+        glScalef(30.0, 2.0, 45.0);
+        glutSolidCube(1.0);
+      glPopMatrix();
+      glPushMatrix();
+        glTranslatef(0.0, 30.0, 28.0);
+        glScalef(30.0, 15.0, 5.0);
+        glutSolidCube(1.0);
+      glPopMatrix();
+    glPopMatrix();
+    glPushMatrix();
+      resetMats();
+      glMaterialfv(GL_FRONT, GL_AMBIENT, carInteriorPaintMatAmb);
+      glMaterialfv(GL_FRONT, GL_DIFFUSE, carInteriorPaintMatDif);
+      glMaterialfv(GL_FRONT, GL_SPECULAR, carInteriorPaintMatSpec);
+      glMaterialfv(GL_FRONT, GL_SHININESS, carInteriorPaintMatShin);
+      glRotatef(45, 1, 0, 0);
+      glPushMatrix();
+        glTranslatef(0.0, 8.0, -22.0);
+        glScalef(30.0, 3.0, 10.0);
+        glutSolidCube(1.0);
+      glPopMatrix();
+    glPopMatrix();
+    glPushMatrix();
+      glBindTexture(GL_TEXTURE_2D, velourId);
+      glEnable(GL_TEXTURE_2D);
+      glTranslatef(0.0, 25.0, -10.0);
+      glPushMatrix();
+        glRotatef(45, 1.0, 0.0, 0.0);
+        glPushMatrix();
+          glRotatef(-turn * 10, 0.0, 1.0, 0.0);
+          glmDraw(steeringWheel, GLM_SMOOTH|GLM_TEXTURE|GLM_MATERIAL);
+        glPopMatrix();
+      glPopMatrix();
+      glDisable(GL_TEXTURE_2D);
     glPopMatrix();
   glPopMatrix();
 }
 
 // Display callback.
-// Generates building and applies the rotations.
 void display(void) {
   resetMats();
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   glLoadIdentity();
   glEnable(GL_LIGHT0);
+  if (horror == 0) {
+    glFogf(GL_FOG_DENSITY, 0.00005);
+  }
+  else {
+    glFogf(GL_FOG_DENSITY, 0.005);
+  }
 
   if (win == 0) {
     if (view == 0) {
@@ -1046,9 +1226,9 @@ void display(void) {
                 cameraZ - cos(heading/RADIANS_TO_DEGREES) * 1000, 0, 1, 0);
       }
       else {
-        gluLookAt(cameraX - sin(heading/RADIANS_TO_DEGREES) * 100,
-                  cameraY + 50.0,
-                  cameraZ + cos(heading/RADIANS_TO_DEGREES) * 100,
+        gluLookAt(cameraX - sin(heading/RADIANS_TO_DEGREES) * 200,
+                  75.0,
+                  cameraZ + cos(heading/RADIANS_TO_DEGREES) * 200,
                   cameraX + sin(heading/RADIANS_TO_DEGREES) * 1000, - 100.0,
                   cameraZ - cos(heading/RADIANS_TO_DEGREES) * 1000, 0, 1, 0);
       }
@@ -1078,7 +1258,7 @@ void display(void) {
         glPopMatrix();
         glPushMatrix();
           glRotatef(-90, 0, 1, 0);
-          glScalef(treeList[i].scaleY, treeList[i].scaleY, treeList[i].scaleZ);
+          glScalef(treeList[i].scaleX, treeList[i].scaleY, treeList[i].scaleZ);
           glmDraw(tree, GLM_SMOOTH|GLM_MATERIAL|GLM_TEXTURE);
         glPopMatrix();
       glPopMatrix();
@@ -1191,14 +1371,14 @@ void display(void) {
 	CalculateFrameRate();
 }
 
-// Mouse callback that allows the user to rotate the building.
+// Unused.
 static void mouse(int button, int state, int x, int y) {
-
+  NULL;
 }
 
-// Motion callback that changes rotation angles.
+// Unused.
 static void motion(int x, int y) {
-
+  NULL;
 }
 
 // Resets all materials to ensure no unintentional effects.
@@ -1212,7 +1392,7 @@ void resetMats(void) {
 
 // Initialization function.
 void init(void) {
-  glClearColor(1.0, 1.0, 1.0, 1.0);
+  glClearColor(0.7, 0.7, 0.7, 1.0);
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_LIGHTING);
   glEnable(GL_AUTO_NORMAL);
@@ -1222,10 +1402,8 @@ void init(void) {
 
   glEnable(GL_FOG);
   glFogi(GL_FOG_MODE, GL_EXP);
-  glFogf(GL_FOG_DENSITY, 0.001);
-  glFogfv(GL_FOG, fogColor);
-  // glFogf(GL_FOG_START, 1.0);
-  // glFogf(GL_FOG_END, 10000.0);
+  glFogf(GL_FOG_DENSITY, 0.00005);
+  glFogfv(GL_FOG_COLOR, fogColor);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   loadTextures();
@@ -1234,10 +1412,12 @@ void init(void) {
   generateBikeMen(5);
 }
 
+// Updates keyboard state when a key is released.
 void keyboardUp(unsigned char key, int x, int y) {
   keyboard[key] = 0;
 }
 
+// Updates keyboard state when a key is pressed. Also handles the toggles.
 void keyboardDown(unsigned char key, int x, int y) {
   keyboard[key] = 1;
   if (key == 'v') {
@@ -1248,16 +1428,24 @@ void keyboardDown(unsigned char key, int x, int y) {
       view = 1;
     }
   }
+  if (key == 'h') {
+    if (horror == 0) {
+      horror = 1;
+    }
+    else {
+      horror = 0;
+    }
+  }
 }
 
-// Keyboard callback that allows the user to quit, zoom, and toggle MSAA.
+// Does the actions of the keys.
 void keyboardCheck(void) {
   if (keyboard['q'] == 1) {
     delete tree;
     exit(0);
   }
   if (keyboard['w'] == 1) {
-    if (speed<5.0) {
+    if (speed<6.0) {
       speed = speed + 1.0;
     }
   }
@@ -1283,13 +1471,13 @@ void myReshape(int w, int h) {
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
   glViewport(0, 0, w, h);
-  gluPerspective(60.0f, (GLfloat)w/(GLfloat)h, 0.1, 4000.0);
+  gluPerspective(75.0f, (GLfloat)w/(GLfloat)h, 0.1, 4000.0);
   glMatrixMode(GL_MODELVIEW);
   ww = w;
  	wh = h;
 }
 
-// Idle callback that does a small z axis rotation and flashes the antenna light.
+// Idle callback. Drives the game for the most part.
 void idle() {
   checkWin();
   keyboardCheck();
@@ -1298,6 +1486,15 @@ void idle() {
   		wheelAngle = wheelAngle - 360.0;
   	wheelAngle += 5;
 
+  rightMan = invert(wheelAngle + 105);
+  leftMan = invert(wheelAngle - 75);
+
+  if (carWheelRotation > 360.0)
+  		carWheelRotation = carWheelRotation - 360.0;
+  if (carWheelRotation < 0.0)
+  		carWheelRotation = carWheelRotation + 360.0;
+  	carWheelRotation += speed;
+
   if (bikeAngle > 360.0)
   		bikeAngle = bikeAngle - 360.0;
   	bikeAngle += 1;
@@ -1305,20 +1502,20 @@ void idle() {
   if ((speed < 0.1) && (speed > -0.1)) {
     speed = 0;
   }
-  else if (speed > 0) {
+  else if ((speed > 0) && (keyboard['w'] == 0)) {
     speed = speed - 0.005;
   }
-  else if (speed < 0) {
+  else if ((speed < 0) && (keyboard['s'] == 0)) {
     speed = speed + 0.005;
   }
 
   if ((turn < 0.05) && (turn > -0.05)) {
     turn = 0;
   }
-  else if (turn > 0) {
+  else if ((turn > 0) && (keyboard['d'] == 0)) {
     turn = turn - 0.5;
   }
-  else if (turn < 0) {
+  else if ((turn < 0) && (keyboard['a'] == 0)) {
     turn = turn + 0.5;
   }
 
@@ -1335,7 +1532,7 @@ void idle() {
     float prevZ = cameraZ;
     cameraX = cameraX + sin(heading/RADIANS_TO_DEGREES)*speed;
     cameraZ = cameraZ - cos(heading/RADIANS_TO_DEGREES)*speed;
-    int check = checkTreeCollisions(cameraX, cameraZ);
+    int check = checkTreeCollisions(cameraX, cameraZ, carWidth, carLength);
     if (check > -1) {
       cameraX = prevX;
       cameraZ = prevZ;
@@ -1344,23 +1541,23 @@ void idle() {
         treeList[check].fallAngle = heading + 180;
       }
     }
-    check = checkBikeCollisions(cameraX, cameraZ);
+    check = checkBikeCollisions(cameraX, cameraZ, carWidth, carLength);
     if (check > -1) {
       bikeList[check].dead = 1;
     }
     knockDownTrees();
     killBikeMen();
-    if (cameraX > 990) {
-      cameraX = 990;
+    if (cameraX > 980) {
+      cameraX = 980;
     }
-    if (cameraX < -990) {
-      cameraX = -990;
+    if (cameraX < -980) {
+      cameraX = -980;
     }
-    if (cameraZ > 990) {
-      cameraZ = 990;
+    if (cameraZ > 980) {
+      cameraZ = 980;
     }
-    if (cameraZ < -990) {
-      cameraZ = -990;
+    if (cameraZ < -980) {
+      cameraZ = -980;
     }
   }
   else {
@@ -1401,7 +1598,7 @@ int main(int argc, char **argv) {
   glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH | GLUT_MULTISAMPLE);
 
   // Initial window size and position.
-  glutInitWindowSize(800,800);
+  glutInitWindowSize(1500,750);
   glutInitWindowPosition(300,100);
 
   // Name the window.
