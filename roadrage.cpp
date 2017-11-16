@@ -1585,7 +1585,7 @@ void idle() {
         treeList[i].fallAngle = rand()%360;
       }
     }
-    if (cameraY < 4000) {
+    if (cameraY < 3000) {
       cameraY = cameraY + 1;
     }
   }
