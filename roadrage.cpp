@@ -1577,11 +1577,13 @@ void idle() {
   else {
     knockDownTrees();
     killBikeMen();
-    int i = rand()%treeList.size();
-    int j = rand()%100;
-    if ((treeList[i].fall < 1) && (j < 5)) {
-      treeList[i].fall = 1;
-      treeList[i].fallAngle = rand()%360;
+    if (treeList.size() > 0) {
+      int i = rand()%treeList.size();
+      int j = rand()%100;
+      if ((treeList[i].fall < 1) && (j < 5)) {
+        treeList[i].fall = 1;
+        treeList[i].fallAngle = rand()%360;
+      }
     }
     if (cameraY < 4000) {
       cameraY = cameraY + 1;
