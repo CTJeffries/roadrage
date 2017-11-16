@@ -93,6 +93,8 @@ static int horror = 0;
 static GLfloat carWheelRotation = 0;
 static float carWidth = 20; // From center of car.
 static float carLength = 30; // Same.
+static int numBikeMen = 5;
+static int numTree = 50;
 
 // Global data structures
 vector<treeObj> treeList;
@@ -185,6 +187,18 @@ int checkBikeCollisions(float, float, float, float);
 void knockDownTrees(void);
 void generateBikeMen(int);
 void checkWin(void);
+void reset(void);
+
+// Resets the game.
+void reset(void) {
+  wheelAngle = 0; bikeAngle = 0; speed = 0.0; turn = 0.0; heading = 0.0;
+  cameraX = 0.0; cameraY = 40.0; cameraZ = 0.0; win = 0; view = 0; horror = 0;
+  carWheelRotation = 0;
+  treeList.clear(); bikeList.clear();
+
+  generateTrees(numTree);
+  generateBikeMen(numBikeMen);
+}
 
 // Checks if the player wins, basically if all the bike men are dead.
 void checkWin(void) {
@@ -1408,8 +1422,8 @@ void init(void) {
 
   loadTextures();
   loadModels();
-  generateTrees(50);
-  generateBikeMen(5);
+  generateTrees(numTree);
+  generateBikeMen(numBikeMen);
 }
 
 // Updates keyboard state when a key is released.
@@ -1591,6 +1605,31 @@ void CalculateFrameRate(void) {
 	glutPostRedisplay();
 }
 
+// Number of bike men callback.
+void bike_menu(int id) {
+  if (id == 1) numBikeMen = 1;
+  else if (id == 2) numBikeMen = 3;
+  else if (id == 3) numBikeMen = 5;
+  else if (id == 4) numBikeMen = 10;
+  else if (id == 5) numBikeMen = 20;
+  reset();
+}
+
+// Number of trees callback.
+void tree_menu(int id) {
+  if (id == 1) numTree = 5;
+  else if (id == 2) numTree = 25;
+  else if (id == 3) numTree = 50;
+  else if (id == 4) numTree = 100;
+  else if (id == 5) numTree = 200;
+  reset();
+}
+
+// Main Menu callback.
+void right_menu(int id) {
+  if (id == 1) reset();
+}
+
 int main(int argc, char **argv) {
   srand(time(NULL));
   // Initialize OpenGL.
@@ -1616,6 +1655,26 @@ int main(int argc, char **argv) {
 
   // Initialization function.
   init();
+
+  // Menus
+  int b_menu, t_menu, r_menu;
+  b_menu = glutCreateMenu(bike_menu);
+  glutAddMenuEntry("1", 1);
+  glutAddMenuEntry("3", 2);
+  glutAddMenuEntry("5", 3);
+  glutAddMenuEntry("10", 4);
+  glutAddMenuEntry("20", 5);
+  t_menu = glutCreateMenu(tree_menu);
+  glutAddMenuEntry("5", 1);
+  glutAddMenuEntry("25", 2);
+  glutAddMenuEntry("50", 3);
+  glutAddMenuEntry("100", 4);
+  glutAddMenuEntry("200", 5);
+  r_menu = glutCreateMenu(right_menu);
+  glutAddMenuEntry("Reset", 1);
+  glutAddSubMenu("Number of Trees", t_menu);
+  glutAddSubMenu("Number of Bike Men", b_menu);
+  glutAttachMenu(GLUT_RIGHT_BUTTON);
 
   // Mainloop
   glutMainLoop();
