@@ -95,6 +95,7 @@ static float carWidth = 20; // From center of car.
 static float carLength = 30; // Same.
 static int numBikeMen = 5;
 static int numTree = 50;
+static int teapotMode = 0;
 
 // Global data structures
 vector<treeObj> treeList;
@@ -1256,8 +1257,6 @@ void display(void) {
     glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
   glPopMatrix();
 
-  glBindTexture(GL_TEXTURE_2D, woodId);
-  glEnable(GL_TEXTURE_2D);
 
   for(int i=0; i<treeList.size(); i++) {
     glPushMatrix();
@@ -1266,20 +1265,37 @@ void display(void) {
       glPushMatrix();
         glRotatef(treeList[i].fall, 1, 0, 0);
         glRotatef(treeList[i].rotation + treeList[i].fallAngle, 0, 1, 0);
-        glPushMatrix();
-          glScalef(treeList[i].scaleX, treeList[i].scaleY, treeList[i].scaleZ);
-          glmDraw(tree, GLM_SMOOTH|GLM_MATERIAL|GLM_TEXTURE);
-        glPopMatrix();
-        glPushMatrix();
-          glRotatef(-90, 0, 1, 0);
-          glScalef(treeList[i].scaleX, treeList[i].scaleY, treeList[i].scaleZ);
-          glmDraw(tree, GLM_SMOOTH|GLM_MATERIAL|GLM_TEXTURE);
-        glPopMatrix();
+        if (teapotMode == 0) {
+          glBindTexture(GL_TEXTURE_2D, woodId);
+          glEnable(GL_TEXTURE_2D);
+          glPushMatrix();
+            glScalef(treeList[i].scaleX, treeList[i].scaleY, treeList[i].scaleZ);
+            glmDraw(tree, GLM_SMOOTH|GLM_MATERIAL|GLM_TEXTURE);
+          glPopMatrix();
+          glPushMatrix();
+            glRotatef(-90, 0, 1, 0);
+            glScalef(treeList[i].scaleX, treeList[i].scaleY, treeList[i].scaleZ);
+            glmDraw(tree, GLM_SMOOTH|GLM_MATERIAL|GLM_TEXTURE);
+          glPopMatrix();
+          glDisable(GL_TEXTURE_2D);
+        }
+        else {
+          resetMats();
+          glMaterialfv(GL_FRONT, GL_AMBIENT, rubberMatAmb);
+          glMaterialfv(GL_FRONT, GL_DIFFUSE, rubberMatDif);
+          glMaterialfv(GL_FRONT, GL_SPECULAR, rubberMatSpec);
+          glMaterialfv(GL_FRONT, GL_SHININESS, rubberMatShin);
+          glPushMatrix();
+            glTranslatef(0.0, 20.0, 0.0);
+            glPushMatrix();
+              glScalef(20.0, 20.0, 20.0);
+              glutSolidTeapot(1.0);
+            glPopMatrix();
+          glPopMatrix();
+        }
       glPopMatrix();
     glPopMatrix();
   }
-
-  glDisable(GL_TEXTURE_2D);
 
   for(int i=0; i<bikeList.size(); i++) {
     glPushMatrix();
@@ -1448,6 +1464,14 @@ void keyboardDown(unsigned char key, int x, int y) {
     }
     else {
       horror = 0;
+    }
+  }
+  if (key == 't') {
+    if (teapotMode == 0) {
+      teapotMode = 1;
+    }
+    else {
+      teapotMode = 0;
     }
   }
 }
