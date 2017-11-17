@@ -8,10 +8,8 @@ When compiling, ensure to link OpenGL, tgaClass.cpp, glm.cpp, and math (if on Li
 //  s: Brake/Reverse
 //  a: Turn Left
 //  d: Turn Right
-//  v: Swap between 1st and 3rd person.
+//  v: Toggle view modes.
 //  h: Toggles horror mode. (THICK FOG).
 
 Right click to open the menu. Here you can change the amount of trees, the amount of bike men and
 reset the game.
-
-

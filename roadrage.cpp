@@ -10,7 +10,7 @@
 //  s: Brake/Reverse
 //  a: Turn Left
 //  d: Turn Right
-//  v: Swap between 1st and 3rd person.
+//  v: Toggle view modes.
 //  h: Toggles horror mode. (THICK FOG).
 
 // Modules
@@ -1228,7 +1228,7 @@ void display(void) {
   glLoadIdentity();
   glEnable(GL_LIGHT0);
   if (horror == 0) {
-    glFogf(GL_FOG_DENSITY, 0.00005);
+    glFogf(GL_FOG_DENSITY, 0.0001);
   }
   else {
     glFogf(GL_FOG_DENSITY, 0.005);
@@ -1240,16 +1240,19 @@ void display(void) {
                 cameraX + sin(heading/RADIANS_TO_DEGREES) * 1000, cameraY,
                 cameraZ - cos(heading/RADIANS_TO_DEGREES) * 1000, 0, 1, 0);
       }
-      else {
-        gluLookAt(cameraX - sin(heading/RADIANS_TO_DEGREES) * 200,
-                  75.0,
-                  cameraZ + cos(heading/RADIANS_TO_DEGREES) * 200,
+      else if (view == 1) {
+        gluLookAt(cameraX - sin(heading/RADIANS_TO_DEGREES) * 150,
+                  100.0,
+                  cameraZ + cos(heading/RADIANS_TO_DEGREES) * 150,
                   cameraX + sin(heading/RADIANS_TO_DEGREES) * 1000, - 100.0,
                   cameraZ - cos(heading/RADIANS_TO_DEGREES) * 1000, 0, 1, 0);
       }
+      else {
+        gluLookAt(0.1, 1000.0, 0.1, cameraX, cameraY, cameraZ, 0, 1, 0);
+      }
   }
   else {
-    gluLookAt(cameraX, cameraY, cameraZ, 0.0, 0.0, 0.0, 0, 1, 0);
+    gluLookAt(0.1, cameraY, 0.1, 0.0, 0.0, 0.0, 0, 1, 0);
   }
 
   // Place the light.
@@ -1432,7 +1435,7 @@ void init(void) {
 
   glEnable(GL_FOG);
   glFogi(GL_FOG_MODE, GL_EXP);
-  glFogf(GL_FOG_DENSITY, 0.00005);
+  glFogf(GL_FOG_DENSITY, 0.0001);
   glFogfv(GL_FOG_COLOR, fogColor);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -1452,6 +1455,9 @@ void keyboardDown(unsigned char key, int x, int y) {
   keyboard[key] = 1;
   if (key == 'v') {
     if (view == 1) {
+      view = 2;
+    }
+    else if (view == 2){
       view = 0;
     }
     else {
@@ -1564,43 +1570,38 @@ void idle() {
   if (heading < 0) {
     heading = heading + 360;
   }
-
-  if (win == 0) {
-    float prevX = cameraX;
-    float prevZ = cameraZ;
-    cameraX = cameraX + sin(heading/RADIANS_TO_DEGREES)*speed;
-    cameraZ = cameraZ - cos(heading/RADIANS_TO_DEGREES)*speed;
-    int check = checkTreeCollisions(cameraX, cameraZ, carWidth, carLength);
-    if (check > -1) {
-      cameraX = prevX;
-      cameraZ = prevZ;
-      if (treeList[check].fall < 1) {
-        treeList[check].fall = 1;
-        treeList[check].fallAngle = heading + 180;
-      }
-    }
-    check = checkBikeCollisions(cameraX, cameraZ, carWidth, carLength);
-    if (check > -1) {
-      bikeList[check].dead = 1;
-    }
-    knockDownTrees();
-    killBikeMen();
-    if (cameraX > 980) {
-      cameraX = 980;
-    }
-    if (cameraX < -980) {
-      cameraX = -980;
-    }
-    if (cameraZ > 980) {
-      cameraZ = 980;
-    }
-    if (cameraZ < -980) {
-      cameraZ = -980;
+  float prevX = cameraX;
+  float prevZ = cameraZ;
+  cameraX = cameraX + sin(heading/RADIANS_TO_DEGREES)*speed;
+  cameraZ = cameraZ - cos(heading/RADIANS_TO_DEGREES)*speed;
+  int check = checkTreeCollisions(cameraX, cameraZ, carWidth, carLength);
+  if (check > -1) {
+    cameraX = prevX;
+    cameraZ = prevZ;
+    if (treeList[check].fall < 1) {
+      treeList[check].fall = 1;
+      treeList[check].fallAngle = heading + 180;
     }
   }
-  else {
-    knockDownTrees();
-    killBikeMen();
+  check = checkBikeCollisions(cameraX, cameraZ, carWidth, carLength);
+  if (check > -1) {
+    bikeList[check].dead = 1;
+  }
+  knockDownTrees();
+  killBikeMen();
+  if (cameraX > 980) {
+    cameraX = 980;
+  }
+  if (cameraX < -980) {
+    cameraX = -980;
+  }
+  if (cameraZ > 980) {
+    cameraZ = 980;
+  }
+  if (cameraZ < -980) {
+    cameraZ = -980;
+  }
+  if (win == 1) {
     if (treeList.size() > 0) {
       int i = rand()%treeList.size();
       int j = rand()%100;
@@ -1609,8 +1610,8 @@ void idle() {
         treeList[i].fallAngle = rand()%360;
       }
     }
-    if (cameraY < 3000) {
-      cameraY = cameraY + 1;
+    if (cameraY < 4000.0) {
+      cameraY = cameraY + 2;
     }
   }
   glutPostRedisplay();
